@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <WindowsSdkPackageVersion>10.0.22621.57</WindowsSdkPackageVersion>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>Imago</RootNamespace>
+    <AssemblyName>Imago</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationVisualStyles>true</ApplicationVisualStyles>
+
+    <Version>1.0.0</Version>
+    <Product>Imago</Product>
+    <Company>Imago</Company>
+    <Description>Imago screenshots</Description>
+    <Copyright>Copyright 2026 Abhishek</Copyright>
+
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
+    <Deterministic>true</Deterministic>
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <!-- Hardening: Intel CET shadow stack on the apphost, warnings treated as errors. -->
+    <CETCompat>true</CETCompat>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);SYSLIB5006</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="Exists('Imago.ico')">
+    <ApplicationIcon>Imago.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('Imago.ico')">
+    <EmbeddedResource Include="Imago.ico" LogicalName="Imago.ico" />
+  </ItemGroup>
+
+  <!-- Lato (SIL Open Font License) is the app font. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Fonts\Lato-Regular.ttf" LogicalName="Imago.Lato-Regular.ttf" />
+    <EmbeddedResource Include="Fonts\Lato-Bold.ttf" LogicalName="Imago.Lato-Bold.ttf" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" />
+  </ItemGroup>
+
+</Project>

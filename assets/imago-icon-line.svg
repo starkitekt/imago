@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#2F6FEB" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+  <title>Imago</title>
+  <!-- Camera body -->
+  <rect x="0" y="2" width="24" height="14" rx="2"/>
+  <!-- Film pack -->
+  <rect x="0" y="16.5" width="24" height="5.5" rx="1"/>
+  <!-- Lens -->
+  <circle cx="12" cy="7.5" r="4.5"/>
+  <circle cx="12" cy="7.5" r="2"/>
+  <!-- Flash -->
+  <rect x="18.4" y="3" width="4.4" height="4.4" rx="0.5"/>
+  <!-- Shutter and capture buttons -->
+  <circle cx="20.6" cy="10.1" r="1.3"/>
+  <circle cx="3.8" cy="10.1" r="1.6"/>
+  <!-- Viewfinder -->
+  <rect x="1.3" y="5.8" width="5.1" height="1.7" rx="0.3"/>
+  <!-- Photo exit -->
+  <path d="M12 12v4"/>
+</svg>

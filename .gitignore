@@ -1,0 +1,22 @@
+# Build output
+app/bin/
+app/obj/
+build/
+dist/
+dist-standalone/
+installer/out/
+*.pdb
+
+# Local archive of an earlier build, never published
+fallback/
+
+# User-supplied AI models are not redistributed
+models/
+*.onnx
+
+# Editors and OS
+.vs/
+.vscode/
+*.user
+Thumbs.db
+.DS_Store
