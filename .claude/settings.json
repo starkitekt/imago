@@ -1,0 +1,11 @@
+{
+  "extraKnownMarketplaces": {
+    "doer": {
+      "source": { "source": "github", "repo": "starkitekt/Doer" },
+      "autoUpdate": true
+    }
+  },
+  "enabledPlugins": {
+    "live-checklist@doer": true
+  }
+}
