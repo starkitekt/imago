@@ -6,6 +6,12 @@ namespace Imago;
 /// <summary>User settings, stored in %LOCALAPPDATA%\Imago\settings.json.</summary>
 internal sealed class Settings
 {
+    /// <summary>Recording frame rate. 0 matches the display (up to 120).</summary>
+    public int RecordFps { get; set; }
+
+    /// <summary>Record the pointer apart from the picture so the Flow editor can smooth it.</summary>
+    public bool CursorSeparate { get; set; }
+
     /// <summary>Stamp and sign every capture.</summary>
     public bool Verified { get; set; }
 

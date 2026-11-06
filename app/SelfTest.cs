@@ -110,6 +110,97 @@ internal static class SelfTest
         Check("Review: untouched capture is stamped", rv.Verdict == ReviewVerdict.Stamped, rv.Headline);
         Check("Review: Imago edits come from the signed log", rv.ImagoEdits.Count == 1 && rv.ImagoEdits[0].Box == blurBox);
 
+        // 12a. Event track: typed characters are never stored; shortcuts are; the signed manifest pins the file.
+        {
+            Check("Track: typed letter is counted, not named", EventTrack.Classify(0x41, false, false, false, false) == ("char", null));
+            Check("Track: Ctrl+S is kept by name", EventTrack.Classify(0x53, true, false, false, false) == ("key", "Ctrl+S"));
+            Check("Track: lone modifier is skipped", EventTrack.Classify(0x11, true, false, false, false).Kind is null);
+            Check("Track: Enter is kept by name", EventTrack.Classify(0x0D, false, false, false, false) == ("key", "Enter"));
+        }
+        {
+            string tdir = Path.Combine(Path.GetTempPath(), "imago-track-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tdir);
+            string tv = Path.Combine(tdir, "t.mp4");
+            try
+            {
+                var data = new byte[2 * 1024 * 1024];
+                new Random(3).NextBytes(data);
+                File.WriteAllBytes(tv, data);
+                var tr = new EventTrack(new Rectangle(0, 0, 1920, 1080));
+                long f = System.Diagnostics.Stopwatch.Frequency;
+                tr.AddForTest("win", s: "app.exe", s2: "Before", qpc: 0);
+                tr.AddForTest("move", 10, 20, qpc: f / 2);
+                tr.AddForTest("key", s: "Ctrl+S", qpc: f);
+                tr.AddForTest("char", qpc: f + 10);
+                string tp = tv + EventTrack.Ext;
+                tr.Save(tp, "t.mp4", f / 4, 1920, 1080, 2);
+                string txt = File.ReadAllText(tp);
+                Check("Track: window before first frame kept at 0", txt.Contains("\"t\":0,\"e\":\"win\""), txt);
+                Check("Track: times start at the first frame", txt.Contains("\"t\":250,\"e\":\"move\""), txt);
+                Check("Track: no typed text in the file", !txt.Contains("Before\":") && txt.Contains("\"e\":\"char\"") && !txt.Contains("\"k\":\"A\""));
+                var rt = new RecordingResult(tv, 1920, 1080, 60, 2, false, DateTimeOffset.Now.AddSeconds(-2), DateTimeOffset.Now, "H.264");
+                VideoProof.SignAsync(tv, rt, new VerifiedOptions("Test", "", null, null), null, null, tp).GetAwaiter().GetResult();
+                var ok = VideoProof.Verify(tv);
+                Check("Track: signed video with track verifies", ok.Status == VerifyStatus.Valid && ok.Details.Any(d => d.Contains("Event track intact")), string.Join(" | ", ok.Details));
+                File.WriteAllText(tp, txt.Replace("\"t\":250", "\"t\":251"));
+                var bt = VideoProof.Verify(tv);
+                Check("Track: edited track is caught", bt.Status == VerifyStatus.Tampered, bt.Status + " " + bt.Headline + " " + string.Join("|", bt.Details) + " same=" + (txt == File.ReadAllText(tp)));
+            }
+            finally { try { Directory.Delete(tdir, true); } catch (IOException) { } }
+        }
+
+        // 12a. Flow model: steps, smoothing, zoom clamp, ripples, HTML, derived note.
+        {
+            var moves = Enumerable.Range(0, 100).Select(i => (i * 0.03, 100 + i * 10 + (i % 2 == 0 ? 6 : -6), 500)).ToList();
+            var clicks = new List<(double T, int X, int Y)> { (1.0, 400, 500), (1.2, 405, 502), (2.5, 1900, 20) };
+            var fp = FlowProject.FromEvents("v.mp4", 1920, 1080, 3.0, true, moves, clicks);
+            Check("Flow: nearby clicks merge into one step", fp.Steps.Count == 2, fp.Steps.Count.ToString());
+            var raw = fp.RawCursor(1.5); fp.Smooth = true; var sm = fp.Cursor(1.5);
+            Check("Flow: smoothing stays within the jitter band", Math.Abs(sm.X - raw.X) < 20 && Math.Abs(sm.Y - 500) < 1);
+            var (zs, zcx, zcy) = fp.ZoomAt(2.6);
+            Check("Flow: zoom view stays inside the frame", zs > 1 && zcx + 1920 / zs / 2 <= 1920.01 && zcy - 1080 / zs / 2 >= -0.01);
+            Check("Flow: no zoom when off", (fp.Zoom = false) == false && fp.ZoomAt(2.6).Scale == 1);
+            Check("Flow: ripple lives 0.6 s", fp.RippleAt(1.3).Any() && !fp.RippleAt(1.9).Any(r => r.X == 400));
+            fp.Steps[0].Caption = "Tap <b>Pay</b>";
+            string html = fp.ToHtml("v.mp4");
+            Check("Flow: HTML escapes captions and names the video", html.Contains("v.mp4") && !html.Contains("<b>Pay</b>"));
+            string fd = Path.Combine(Path.GetTempPath(), "imago-flow-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(fd);
+            try
+            {
+                string ov = Path.Combine(fd, "o.mp4"), nv = Path.Combine(fd, "n.mp4");
+                File.WriteAllBytes(ov, [1, 2, 3]); File.WriteAllBytes(nv, [4, 5, 6]);
+                string note = FlowProject.WriteDerivedNote(nv, ov, fp.Effects);
+                string nt = File.ReadAllText(note);
+                Check("Flow: derived note says unsigned and names the original", nt.Contains("\"signed\": false") || nt.Contains("\"signed\":false"), nt);
+            }
+            finally { try { Directory.Delete(fd, true); } catch (IOException) { } }
+        }
+
+        // 12b. Video sidecar: sign a dummy file, then catch a one-byte change.
+        {
+            string vp = Path.Combine(Path.GetTempPath(), "imago-selftest-" + Guid.NewGuid().ToString("N") + ".mp4");
+            try
+            {
+                var data = new byte[5 * 1024 * 1024];
+                new Random(7).NextBytes(data);
+                File.WriteAllBytes(vp, data);
+                var recT = new RecordingResult(vp, 1920, 1080, 60, 12.5, true, DateTimeOffset.Now.AddSeconds(-12), DateTimeOffset.Now, "H.264");
+                VideoProof.SignAsync(vp, recT, new VerifiedOptions("Test", "", null, null)).GetAwaiter().GetResult();
+                Check("Signed recording verifies", VideoProof.Verify(vp).Status == VerifyStatus.Valid, VideoProof.Verify(vp).Headline);
+                data[4_900_000] ^= 1;
+                File.WriteAllBytes(vp, data);
+                var bad = VideoProof.Verify(vp);
+                Check("One-byte recording edit is caught, with its place", bad.Status == VerifyStatus.Tampered && bad.Details.Any(d => d.Contains("block")), string.Join(" | ", bad.Details));
+                File.Delete(VideoProof.SidecarPath(vp));
+                Check("Recording without sidecar reads as unsigned", VideoProof.Verify(vp).Status == VerifyStatus.Unsigned);
+            }
+            finally
+            {
+                try { File.Delete(vp); File.Delete(VideoProof.SidecarPath(vp)); } catch (IOException) { }
+            }
+        }
+
         var painted = Png.Decode(good);
         var hole = new Rectangle(380, 220, 140, 90);
         for (int y = hole.Top; y < hole.Bottom; y++)

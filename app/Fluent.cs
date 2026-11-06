@@ -117,8 +117,11 @@ internal sealed class IconButton : Button
 internal sealed class ToolButton : Control
 {
     private static readonly ToolTip Tips = new() { InitialDelay = 400 };
-    private readonly string _glyph;
+    private string _glyph;
     private bool _hot, _down;
+
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public string Icon { get => _glyph; set { _glyph = value; Invalidate(); } }
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public bool Primary { get; set; }

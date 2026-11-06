@@ -14,6 +14,10 @@ internal sealed class TrayApp : ApplicationContext
     private readonly System.Windows.Forms.Timer _geoTimer = new() { Interval = 5 * 60 * 1000 };
     private MainWindow? _main;
     private bool _busy;
+    private RecordFlow? _rec;
+    private DateTime _recStart;
+    private readonly ToolStripMenuItem _recordItem;
+    private readonly System.Windows.Forms.Timer _recTick = new() { Interval = 1000 };
     private string? _last;
     private static TrayApp? _instance;
 
@@ -28,8 +32,26 @@ internal sealed class TrayApp : ApplicationContext
         menu.Items.Add("Capture window\tAlt+PrtSc", null, (_, _) => Fire(Mode.Window, fromMenu: true));
         menu.Items.Add("Capture full screen\tCtrl+PrtSc", null, (_, _) => Fire(Mode.Full, fromMenu: true));
         menu.Items.Add("Copy text from screen\tCtrl+Alt+PrtSc", null, (_, _) => Fire(Mode.Text, fromMenu: true));
+        _recordItem = new ToolStripMenuItem("Record screen\tShift+PrtSc", null, (_, _) => ToggleRecording());
+        menu.Items.Add(_recordItem);
+        var fpsMenu = new ToolStripMenuItem("Recording frame rate");
+        foreach (var (label, val) in new[] { ("Match display", 0), ("30 fps", 30), ("60 fps", 60) })
+        {
+            var item = new ToolStripMenuItem(label) { Checked = _s.RecordFps == val };
+            item.Click += (_, _) =>
+            {
+                _s.RecordFps = val;
+                _s.Save();
+                foreach (ToolStripMenuItem o in fpsMenu.DropDownItems) o.Checked = ReferenceEquals(o, item);
+            };
+            fpsMenu.DropDownItems.Add(item);
+        }
+        menu.Items.Add(fpsMenu);
+        var sepCursor = new ToolStripMenuItem("Record cursor separately (for Flow editor)") { Checked = _s.CursorSeparate, CheckOnClick = true };
+        sepCursor.Click += (_, _) => { _s.CursorSeparate = sepCursor.Checked; _s.Save(); };
+        menu.Items.Add(sepCursor);
         menu.Items.Add(new ToolStripSeparator());
-        _verifiedItem = new ToolStripMenuItem("Stamped screenshots", null, (_, _) => ToggleVerified());
+        _verifiedItem =new ToolStripMenuItem("Stamped screenshots", null, (_, _) => ToggleVerified());
         menu.Items.Add(_verifiedItem);
         menu.Items.Add("Lock last capture with password...", null, (_, _) =>
         {
@@ -49,7 +71,9 @@ internal sealed class TrayApp : ApplicationContext
 
         _keys = new HotkeyWindow(OnHotkey);
         // Left-click opens the main window. Right-click still opens the menu.
-        _icon.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ShowMain(); };
+        // While recording, a left-click stops it, so stopping never depends on finding a button.
+        _icon.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) { if (_rec is not null) ToggleRecording(); else ShowMain(); } };
+        _recTick.Tick += (_, _) => _icon.Text = "Imago: recording " + (DateTime.Now - _recStart).ToString(@"mm\:ss") + " (clicks and keys tracked)";
         RegisterKeys(firstRun: true);
         UpdateVerifiedItem();
 
@@ -61,6 +85,7 @@ internal sealed class TrayApp : ApplicationContext
     protected override void ExitThreadCore()
     {
         _geoTimer.Dispose();
+        _recTick.Dispose();
         _main?.Dispose();
         _keys.Dispose();
         _icon.Visible = false;
@@ -78,6 +103,8 @@ internal sealed class TrayApp : ApplicationContext
         _keys.Register(2, NR | Native.MOD_ALT, Native.VK_SNAPSHOT);
         _keys.Register(3, NR | Native.MOD_CONTROL, Native.VK_SNAPSHOT);
         _keys.Register(4, NR | Native.MOD_CONTROL | Native.MOD_ALT, Native.VK_SNAPSHOT);
+        _keys.Register(8, NR | Native.MOD_SHIFT, Native.VK_SNAPSHOT);
+        _keys.Register(9, NR | Native.MOD_CONTROL | Native.MOD_SHIFT, '6');
         bool laptop = _s.LaptopKeys || !prt;
         if (laptop)
         {
@@ -100,7 +127,66 @@ internal sealed class TrayApp : ApplicationContext
             case 2 or 7: Fire(Mode.Window); break;
             case 3 or 6: Fire(Mode.Full); break;
             case 4: Fire(Mode.Text); break;
+            case 8 or 9: ToggleRecording(); break;
         }
+    }
+
+    // ---------- recording ----------
+
+    private bool _recBusy;
+
+    private async void ToggleRecording()
+    {
+        if (_recBusy) return;
+        _recBusy = true;
+        try
+        {
+            if (_rec is null) await StartRecordingAsync();
+            else await StopRecordingAsync();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException
+                                      or System.Runtime.InteropServices.COMException or System.Security.Cryptography.CryptographicException)
+        {
+            _rec = null;
+            _recTick.Stop();
+            _icon.Text = "Imago";
+            _recordItem.Text = "Record screen\tShift+PrtSc";
+            Toast("Recording failed", e.Message, ToolTipIcon.Error);
+        }
+        finally { _recBusy = false; }
+    }
+
+    private async Task StartRecordingAsync()
+    {
+        Directory.CreateDirectory(Settings.ScreenshotDir);
+        await Task.Delay(300); // let a menu fade before the first frame
+        _rec = await RecordFlow.StartAsync(Settings.ScreenshotDir, new RecordOptions(Fps: _s.RecordFps, BakeCursor: !_s.CursorSeparate));
+        _recStart = DateTime.Now;
+        _recordItem.Text = "Stop recording\tShift+PrtSc";
+        _recTick.Start();
+        Toast("Recording", $"{_rec.Recorder.Size.Width} x {_rec.Recorder.Size.Height}. Clicks and special keys are tracked, typed text is not. Shift+PrtSc stops.");
+    }
+
+    private async Task StopRecordingAsync()
+    {
+        var flow = _rec!;
+        _rec = null;
+        _recTick.Stop();
+        _icon.Text = "Imago";
+        _recordItem.Text = "Record screen\tShift+PrtSc";
+        _icon.Text = "Imago: saving recording...";
+        VerifiedOptions? v = _s.Verified ? await VerifiedOptionsAsync(_s) : null;
+        var (path, rec, note) = await flow.StopAsync(v);
+        _icon.Text = "Imago";
+        _last = path;
+        Toast("Recording saved" + (v is null ? "" : " and signed"), Path.GetFileName(path) + (note is null ? "" : "\n" + note));
+        var ed = new VideoEditor(path, rec, async (outPath, a, b, parent) =>
+        {
+            var r2 = rec with { Seconds = (b - a).TotalSeconds };
+            return v is null ? null : await VideoProof.SignAsync(outPath, r2, v, [new VideoProof.Edit("trim", a.TotalSeconds, b.TotalSeconds)], parent);
+        });
+        ed.Show();
+        ed.Activate();
     }
 
     // ---------- capture ----------

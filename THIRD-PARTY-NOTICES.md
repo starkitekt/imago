@@ -7,6 +7,7 @@ Imago ships with the following third-party components. Their license texts are c
 | --- | --- | --- | --- |
 | Lato (Regular, Bold) | App typeface, embedded in the exe | SIL Open Font License 1.1, see [`app/Fonts/OFL.txt`](app/Fonts/OFL.txt) | Łukasz Dziedzic, latofonts.com |
 | ONNX Runtime 1.31.0 | Optional on-device image classifier | MIT, copied to `onnxruntime-LICENSE.txt` | NuGet `Microsoft.ML.OnnxRuntime` |
+| NAudio 2.2.1 | System audio and microphone capture for screen recording | MIT | NuGet `NAudio` |
 | .NET 10 runtime | Bundled only in `-SelfContained` builds | MIT | dotnet/runtime |
 
 No AI model is included. Any `.onnx` model a user places in the models folder is under that model's own license.

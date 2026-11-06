@@ -19,6 +19,20 @@ internal static class Program
         Native.sc_harden_process();
         ApplicationConfiguration.Initialize();
 
+        if (args.Length == 2 && args[0] == "--edit" && File.Exists(args[1]))
+        {
+            string vf = Path.GetFullPath(args[1]);
+            var rr = new RecordingResult(vf, 0, 0, 60, 0, true, DateTimeOffset.Now, DateTimeOffset.Now, "");
+            Application.Run(new VideoEditor(vf, rr, (_, _, _, _) => Task.FromResult<string?>(null)));
+            return 0;
+        }
+
+        if (args.Length is 2 or 3 && args[0] == "--flow" && File.Exists(args[1]))
+        {
+            Application.Run(new FlowEditor(Path.GetFullPath(args[1])) { AutoExport = args.Length == 3 && args[2] == "--export", AutoHtml = args.Length == 3 && args[2] == "--html", AutoSvg = args.Length == 3 && args[2] == "--svg", AutoReel = args.Length == 3 && args[2] == "--reel" });
+            return Environment.ExitCode;
+        }
+
         if (args.Length > 0 && args[0].StartsWith("--", StringComparison.Ordinal))
         {
             AttachConsoleIfNeeded();
@@ -67,7 +81,14 @@ internal static class Cli
           --capture full|window|area [--rect x,y,w,h] [--out dir]
                 [--stamped] [--name "Name"] [--place "Place"] [--latlon lat,lon[,accuracyM]]
                 [--use-location] [--tsa]
-          --verify <file.png>                         Exit code: 0 valid, 2 tampered, 3 unsigned, 4 error
+          --record [--seconds N] [--out dir] [--fps match|30|60|120] [--no-audio] [--no-mic] [--no-track] [--separate-cursor] [--stamped] [--name "Name"]
+                Records the display under the cursor at full resolution to MP4 (system audio + mic).
+                Without --seconds it records until you press Enter.
+          --flow <file.mp4> [--export|--html|--svg|--reel]     Open the Flow editor, or export headless (MP4, HTML page, animated SVG, highlight reel)
+          --flow-shots <a.png[@x,y]> <b.png> ... [--out dir]
+                Builds an animated SVG walkthrough from screenshots; @x,y adds a click point for zoom and ripple.
+                Derived work: unsigned, with a note naming and hashing every original.
+          --verify <file.png|file.mp4>               Exit code: 0 valid, 2 tampered, 3 unsigned, 4 error
           --review <file.png|jpg>                     Changed or not, where, what kind, AI involvement
           --seal <file.png> --password-stdin [--delete-original]
           --unseal <file.snapseal> --out <dir> --password-stdin
@@ -87,10 +108,12 @@ internal static class Cli
             case "--selftest": return SelfTest.Run();
             case "--verify":
             {
-                var r = Provenance.Verify(File.ReadAllBytes(Arg(a, 1)));
+                string f = Arg(a, 1);
+                var r = f.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ? VideoProof.Verify(f) : Provenance.Verify(File.ReadAllBytes(f));
                 Console.WriteLine(r.ToString().Replace("±", "+/-"));
                 return (int)r.Status;
             }
+            case "--record": return RecordCmd(a).GetAwaiter().GetResult();
             case "--review":
             {
                 var r = Review.Analyze(File.ReadAllBytes(Arg(a, 1)));
@@ -127,6 +150,12 @@ internal static class Cli
                 catch (Seal.WrongPasswordException e) { Console.Error.WriteLine(e.Message); return 2; }
             }
             case "--capture": return CaptureCmd(a).GetAwaiter().GetResult();
+            case "--flow-shots":
+            {
+                var shots = a.Skip(1).TakeWhile(x => !x.StartsWith("--", StringComparison.Ordinal)).ToList();
+                Console.WriteLine(FlowSvg.FromShots(shots, Opt(a, "--out") ?? Settings.ScreenshotDir));
+                return 0;
+            }
             default:
                 Console.Error.WriteLine("Unknown option " + cmd);
                 Console.WriteLine(Help);
@@ -181,6 +210,34 @@ internal static class Cli
         r.Image.Dispose();
         Console.WriteLine(r.Path);
         foreach (var w in r.Warnings) Console.Error.WriteLine("note: " + w);
+        return 0;
+    }
+
+    private static async Task<int> RecordCmd(string[] a)
+    {
+        string outDir = Opt(a, "--out") ?? Settings.ScreenshotDir;
+        Directory.CreateDirectory(outDir);
+        int fps = Opt(a, "--fps") is { } fs && !fs.Equals("match", StringComparison.OrdinalIgnoreCase) ? int.Parse(fs, CultureInfo.InvariantCulture) : 0;
+        if (fps != 0 && fps is < 5 or > 120) throw new ArgumentException("--fps must be between 5 and 120.");
+        var opt = new RecordOptions(SystemAudio: !Has(a, "--no-audio"), Microphone: !Has(a, "--no-audio") && !Has(a, "--no-mic"), Fps: fps, Track: !Has(a, "--no-track"), BakeCursor: !Has(a, "--separate-cursor"));
+
+        VerifiedOptions? v = null;
+        if (Has(a, "--stamped") || Has(a, "--verified"))
+        {
+            var s = Settings.Load();
+            if (Opt(a, "--name") is { } n) s.DisplayName = n;
+            s.Place = Opt(a, "--place") ?? "";
+            v = await TrayApp.VerifiedOptionsAsync(s);
+        }
+
+        var flow = await RecordFlow.StartAsync(outDir, opt);
+        Console.Error.WriteLine($"Recording {flow.Recorder.Size.Width}x{flow.Recorder.Size.Height} at {(fps == 0 ? "the display rate" : fps + " fps")}...");
+        if (Opt(a, "--seconds") is { } sec) await Task.Delay(TimeSpan.FromSeconds(double.Parse(sec, CultureInfo.InvariantCulture)));
+        else { Console.Error.WriteLine("Press Enter to stop."); Console.In.ReadLine(); }
+        var (path, rec, note) = await flow.StopAsync(v);
+        Console.WriteLine(path);
+        Console.Error.WriteLine($"{rec.Width}x{rec.Height}, {rec.Seconds:0.0}s, {rec.Codec}, " + (rec.HasAudio ? "with audio" : "no audio") + (v is null ? ", not signed" : ", signed"));
+        if (note is not null) Console.Error.WriteLine("note: " + note);
         return 0;
     }
 

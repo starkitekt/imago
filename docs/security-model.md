@@ -19,6 +19,7 @@ the findings of the pre-release review.
 | --- | --- | --- |
 | Recipient who edits a stamped PNG | Pass off an edit as original | Any pixel or manifest change fails the signature: **Tampered**, with the changed tiles shown. |
 | Recipient who strips the metadata | Remove the evidence | File reads as **Unsigned**, never as valid. The watermark still identifies the stamp ID. |
+| Recipient who edits a signed recording (`.mp4`) | Pass off an edit as original | The sidecar `<video>.mp4.imago.json` signs the SHA-256 of the file and of each 4 MB block. Any byte change fails verification and the changed blocks are reported with approximate time spans. The signature covers file bytes, not individual frames, and exists only for recordings made with Verified on (or `--stamped`). A recording without its sidecar reads as **Unsigned**. Trimmed copies carry their own sidecar naming the parent hash and the cut. |
 | Someone who recompresses or rescales | Launder through chat apps | Watermark survives JPEG 85 and common DPI scales. Review reports a stamped copy and, with the ledger, where it changed. |
 | Forger who copies the watermark | Make a fake look stamped | Gets an ID, not a signature. The watermark identifies; only signatures authenticate. |
 | Attacker with a future quantum computer | Forge ES256 | ML-DSA-65 (FIPS 204, level 3) must also verify. Removing it is detected. |

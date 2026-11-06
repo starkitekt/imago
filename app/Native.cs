@@ -62,6 +62,34 @@ internal static class Native
         return new Rectangle(a[0], a[1], a[2], a[3]);
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct DevMode
+    {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string DeviceName;
+        public short SpecVersion, DriverVersion, Size, DriverExtra;
+        public int Fields, PosX, PosY, Orientation, FixedOutput;
+        public short Color, Duplex, YResolution, TTOption, Collate;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string FormName;
+        public short LogPixels;
+        public int BitsPerPel, PelsWidth, PelsHeight, DisplayFlags, DisplayFrequency, IcmMethod, IcmIntent, MediaType, DitherType, Reserved1, Reserved2, PanningWidth, PanningHeight;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern bool EnumDisplaySettingsW(string? device, int mode, ref DevMode dm);
+
+    /// <summary>The refresh rate of the monitor holding this rectangle, clamped to 24..120. Falls back to 60 if Windows will not say.</summary>
+    public static int RefreshRate(Rectangle monitor)
+    {
+        try
+        {
+            var dm = new DevMode { Size = (short)Marshal.SizeOf<DevMode>() };
+            if (EnumDisplaySettingsW(Screen.FromRectangle(monitor).DeviceName, -1, ref dm) && dm.DisplayFrequency > 1)
+                return Math.Clamp(dm.DisplayFrequency, 24, 120);
+        }
+        catch (Exception e) when (e is ArgumentException or MarshalDirectiveException) { }
+        return 60;
+    }
+
     public static ScWindow[] Windows()
     {
         var buf = new ScWindow[512];

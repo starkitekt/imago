@@ -154,6 +154,13 @@ internal static class Provenance
     /// <summary>Signs the manifest with both keys and, if asked, gets an RFC 3161 timestamp. Returns the iTXt chunk.</summary>
     public static async Task<(PngChunk Chunk, string? TsaError)> SignAsync(byte[] manifest, string? tsaUrl, CancellationToken ct = default)
     {
+        var (json, tsaError) = await SignEnvelopeAsync(manifest, tsaUrl, ct);
+        return (Png.ITxt(Keyword, json), tsaError);
+    }
+
+    /// <summary>Same signing, returned as the envelope JSON (used for video sidecars).</summary>
+    public static async Task<(string Json, string? TsaError)> SignEnvelopeAsync(byte[] manifest, string? tsaUrl, CancellationToken ct = default)
+    {
         byte[] toSign = [.. SigLabel, .. manifest];
         byte[] ecSig = Keys.EcSign(toSign);
 
@@ -179,7 +186,7 @@ internal static class Provenance
                 tsaError = e.Message;
             }
         }
-        return (Png.ITxt(Keyword, env.ToJsonString()), tsaError);
+        return (env.ToJsonString(), tsaError);
     }
 
     private static async Task<byte[]> TimestampAsync(byte[] data, string url, CancellationToken ct)
